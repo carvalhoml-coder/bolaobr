@@ -4,7 +4,7 @@
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const supabaseUrl = 'https://hxvlrpffecprmjjxunmn.supabase.co';
-const supabaseKey = 'sb_publishable_e9SyXLZ_s1BT-cdwmH75_Q_3juSIdHa';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh4dmxycGZmZWNwcm1qanh1bm1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNjYwMzYsImV4cCI6MjA5Njk0MjAzNn0.Piq6BicgLSA6U82MKqXO7nP7duxt1Ixtiwabb54rQ1M';
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 const CONFIG = {
@@ -34,7 +34,7 @@ function goTo(screenId) {
   if (target) {
     target.classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    
+
     // Renderiza ao entrar na tela se já temos dados
     if (screenId === 'screen-dashboard') renderDashboard();
     if (screenId === 'screen-admin') renderAdmin();
@@ -71,16 +71,16 @@ function updatePalpitePreview() {
 function submitPalpite() {
   const inp = document.getElementById('inp-nome');
   const nome = inp.value.trim();
-  
+
   if (!nome) {
     showToast('⚠️ Por favor, informe seu nome completo.');
     inp.focus();
     return;
   }
-  
+
   tempNome = nome;
   tempPalpite = { brasil: scoreBrasil, marrocos: scoreMarrocos };
-  
+
   goTo('screen-pix');
 }
 
@@ -91,13 +91,13 @@ function copyPix() {
     const btn = document.getElementById('btn-copy-pix');
     const label = document.getElementById('copy-label');
     const originalText = label.textContent;
-    
+
     btn.style.background = 'var(--color-green)';
     btn.style.color = 'var(--bg-dark)';
     label.textContent = 'Copiado!';
-    
+
     showToast('Chave Pix copiada!');
-    
+
     setTimeout(() => {
       btn.style.background = '';
       btn.style.color = '';
@@ -163,8 +163,8 @@ async function enviarComprovante() {
 
     // 2. Inserir no Banco de Dados
     const { error: insertError } = await supabaseClient
-        .from('participants')
-        .insert([
+      .from('participants')
+      .insert([
         {
           nome: tempNome,
           palpite_brasil: tempPalpite.brasil,
@@ -185,7 +185,7 @@ async function enviarComprovante() {
     btn.style.pointerEvents = 'auto';
 
     showToast('🎉 Palpite enviado! Aguardando aprovação.');
-    
+
     // Busca os dados atualizados
     await fetchParticipants();
     goTo('screen-dashboard');
@@ -212,7 +212,7 @@ async function fetchParticipants() {
   }
 
   participantsData = data || [];
-  
+
   if (document.getElementById('screen-landing').classList.contains('active')) renderLanding();
   if (document.getElementById('screen-dashboard').classList.contains('active')) renderDashboard();
   if (document.getElementById('screen-admin').classList.contains('active')) renderAdmin();
@@ -233,7 +233,7 @@ function setupRealtime() {
 function renderLanding() {
   const approvedCount = participantsData.filter(p => p.status === 'approved').length;
   const total = approvedCount * CONFIG.prizePerPerson;
-  
+
   document.getElementById('landing-prize').textContent = `R$ ${total}`;
   document.getElementById('landing-count').textContent = `${approvedCount} participante${approvedCount !== 1 ? 's' : ''}`;
 }
@@ -259,7 +259,7 @@ function renderDashboard() {
   approved.forEach((p, index) => {
     const rankClass = index < 3 ? `rank-${index + 1}` : '';
     const rankNum = index + 1;
-    
+
     const badges = [];
     if (p.is_organizer) badges.push('<span class="badge badge-org">Organizador</span>');
 
@@ -302,8 +302,8 @@ function renderAdmin() {
 
   sorted.forEach(p => {
     let statusName = 'Pendente';
-    if(p.status === 'approved') statusName = 'Aprovado';
-    if(p.status === 'rejected') statusName = 'Reprovado';
+    if (p.status === 'approved') statusName = 'Aprovado';
+    if (p.status === 'rejected') statusName = 'Reprovado';
 
     list.innerHTML += `
       <li class="admin-item">
@@ -344,8 +344,8 @@ function openModal(id) {
   // Update button states
   const btnApprove = document.getElementById('btn-aprovar');
   const btnReject = document.getElementById('btn-reprovar');
-  
-  if(p.status === 'approved') {
+
+  if (p.status === 'approved') {
     btnApprove.style.display = 'none';
     btnReject.style.display = 'block';
   } else if (p.status === 'rejected') {
@@ -373,7 +373,7 @@ async function aprovar() {
       .update({ status: 'approved' })
       .eq('id', currentModalId);
     showToast('✅ Comprovante aprovado!');
-  } catch(e) {
+  } catch (e) {
     showToast('❌ Erro ao aprovar.');
   }
   closeModal();
@@ -386,7 +386,7 @@ async function reprovar() {
       .update({ status: 'rejected' })
       .eq('id', currentModalId);
     showToast('❌ Comprovante reprovado.');
-  } catch(e) {
+  } catch (e) {
     showToast('❌ Erro ao reprovar.');
   }
   closeModal();
@@ -398,11 +398,11 @@ function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.remove('hidden');
-  
+
   t.style.animation = 'none';
-  t.offsetHeight; 
+  t.offsetHeight;
   t.style.animation = null;
-  
+
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => {
     t.style.animation = 'slideUp 0.3s ease reverse forwards';
@@ -411,7 +411,7 @@ function showToast(msg) {
 }
 
 function escHtml(str) {
-  if(!str) return '';
+  if (!str) return '';
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
@@ -419,26 +419,26 @@ function escHtml(str) {
 
 // Simple CSS confetti
 function createConfetti() {
-  for(let i=0; i<30; i++) {
+  for (let i = 0; i < 30; i++) {
     const conf = document.createElement('div');
     conf.style.position = 'fixed';
     conf.style.width = '10px';
     conf.style.height = '10px';
-    conf.style.backgroundColor = ['#00d24a','#f0c040','#ff4d53','#ffffff'][Math.floor(Math.random()*4)];
+    conf.style.backgroundColor = ['#00d24a', '#f0c040', '#ff4d53', '#ffffff'][Math.floor(Math.random() * 4)];
     conf.style.top = '-10px';
     conf.style.left = Math.random() * 100 + 'vw';
     conf.style.zIndex = '9999';
     conf.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
     conf.style.transition = 'all 2s ease-out';
-    conf.style.transform = `rotate(${Math.random()*360}deg)`;
+    conf.style.transform = `rotate(${Math.random() * 360}deg)`;
     document.body.appendChild(conf);
-    
+
     setTimeout(() => {
       conf.style.top = '100vh';
-      conf.style.transform = `rotate(${Math.random()*720}deg) translateX(${Math.random()*100 - 50}px)`;
+      conf.style.transform = `rotate(${Math.random() * 720}deg) translateX(${Math.random() * 100 - 50}px)`;
       conf.style.opacity = '0';
     }, 50);
-    
+
     setTimeout(() => conf.remove(), 2000);
   }
 }
@@ -447,7 +447,7 @@ function createConfetti() {
 document.addEventListener('DOMContentLoaded', () => {
   // Busca inicial dos dados
   fetchParticipants();
-  
+
   // Ativa o Realtime
   setupRealtime();
 
@@ -466,16 +466,16 @@ document.addEventListener('DOMContentLoaded', () => {
       zone.parentElement.classList.remove('dragover');
       handleFileUpload(e);
     });
-    
+
     // Keyboard accessibility for file upload
     zone.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter' || e.key === ' ') {
+      if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         document.getElementById('file-comprovante').click();
       }
     });
   }
-  
+
   // Custom global CSS for animations
   const style = document.createElement('style');
   style.textContent = `
