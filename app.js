@@ -153,7 +153,7 @@ async function enviarComprovante() {
     return;
   }
   if (!tempNome) {
-    showToast('⚠️ Sessão expirada. Volte e informe seu nome novamente.');
+    showToast('⚠️ Sessão expirada. Volte e informe seu nome.');
     goTo('screen-palpite');
     return;
   }
@@ -163,68 +163,70 @@ async function enviarComprovante() {
   btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⏳</span> Enviando...';
   btn.style.pointerEvents = 'none';
 
-  try {
-    // 1. Upload do arquivo para o Storage
-    const fileExt = uploadedFile.name.split('.').pop().toLowerCase();
-    const safeExt = ['jpg','jpeg','png','gif','webp','pdf'].includes(fileExt) ? fileExt : 'jpg';
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${safeExt}`;
-    const filePath = `palpites/${fileName}`;
+  // ── Variáveis do comprovante (podem ficar null se upload falhar)
+  let comprovanteUrl = null;
+  let comprovanteNome = uploadedFile ? uploadedFile.name : null;
 
-    console.log('[Bolão] Iniciando upload para:', filePath);
+  // ── 1. Tenta upload para o Storage (NÃO-BLOQUEANTE)
+  if (uploadedFile) {
+    try {
+      const fileExt = (uploadedFile.name.split('.').pop() || 'jpg').toLowerCase();
+      const safeExt = ['jpg','jpeg','png','gif','webp','pdf'].includes(fileExt) ? fileExt : 'jpg';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${safeExt}`;
+      const filePath = `palpites/${fileName}`;
 
-    const { error: uploadError } = await supabaseClient.storage
-      .from('comprovantes')
-      .upload(filePath, uploadedFile, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: uploadedFile.type || 'application/octet-stream'
-      });
+      console.log('[Bolão] Tentando upload:', filePath);
 
-    if (uploadError) {
-      console.error('[Bolão] Erro no upload do storage:', uploadError);
-      throw new Error(`Erro ao enviar arquivo: ${uploadError.message}`);
+      const { error: uploadError } = await supabaseClient.storage
+        .from('comprovantes')
+        .upload(filePath, uploadedFile, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: uploadedFile.type || 'application/octet-stream'
+        });
+
+      if (uploadError) {
+        // Upload falhou — registra aviso mas NÃO interrompe o fluxo
+        console.warn('[Bolão] Upload falhou (seguindo sem comprovante):', uploadError.message);
+      } else {
+        const { data: urlData } = supabaseClient.storage
+          .from('comprovantes')
+          .getPublicUrl(filePath);
+        comprovanteUrl = urlData?.publicUrl || null;
+        console.log('[Bolão] Upload OK. URL:', comprovanteUrl);
+      }
+    } catch (uploadErr) {
+      console.warn('[Bolão] Erro inesperado no upload:', uploadErr);
+      // Continua sem comprovante
     }
+  }
 
-    console.log('[Bolão] Upload concluído. Obtendo URL pública...');
+  // ── 2. Salva no banco de dados (SEMPRE executa)
+  try {
+    console.log('[Bolão] Salvando participante:', tempNome, tempPalpite);
 
-    // 2. Pegar URL publica do arquivo
-    const { data: publicUrlData } = supabaseClient.storage
-      .from('comprovantes')
-      .getPublicUrl(filePath);
-
-    const comprovanteUrl = publicUrlData?.publicUrl || '';
-    console.log('[Bolão] URL pública:', comprovanteUrl);
-
-    // 3. Inserir no Banco de Dados
-    console.log('[Bolão] Inserindo participante:', tempNome, tempPalpite);
-
-    const { data: insertData, error: insertError } = await supabaseClient
+    const { error: insertError } = await supabaseClient
       .from('participants')
-      .insert([
-        {
-          nome: tempNome,
-          palpite_brasil: tempPalpite.brasil,
-          palpite_adversario: tempPalpite.adversario,
-          status: 'pending',
-          comprovante_nome: uploadedFile.name,
-          comprovante_url: comprovanteUrl
-        }
-      ])
-      .select();
+      .insert([{
+        nome: tempNome,
+        palpite_brasil: tempPalpite.brasil,
+        palpite_adversario: tempPalpite.adversario,
+        status: 'pending',
+        comprovante_nome: comprovanteNome,
+        comprovante_url: comprovanteUrl
+      }]);
 
     if (insertError) {
-      console.error('[Bolão] Erro ao inserir participante:', insertError);
-      throw new Error(`Erro ao salvar palpite: ${insertError.message}`);
+      console.error('[Bolão] Erro ao inserir:', insertError);
+      throw new Error(insertError.message);
     }
 
-    console.log('[Bolão] Participante inserido com sucesso:', insertData);
+    console.log('[Bolão] Participante salvo com sucesso!');
 
-    // Limpar state
+    // ── 3. Limpar estado
     const nomeSalvo = tempNome;
     tempNome = '';
     uploadedFile = null;
-
-    // Resetar campos
     document.getElementById('inp-nome').value = '';
     scoreBrasil = 0;
     scoreAdversario = 0;
@@ -236,17 +238,16 @@ async function enviarComprovante() {
     btn.innerHTML = originalHTML;
     btn.style.pointerEvents = 'auto';
 
-    showToast(`🎉 Palpite de ${nomeSalvo} enviado! Aguardando aprovação.`);
+    const aviso = comprovanteUrl ? '' : ' (comprovante pendente de verificação)';
+    showToast(`🎉 Palpite de ${nomeSalvo} enviado!${aviso}`);
 
-    // Busca os dados atualizados
     await fetchParticipants();
     goTo('screen-dashboard');
     createConfetti();
 
-  } catch (error) {
-    console.error('[Bolão] Erro completo:', error);
-    const msg = error?.message || 'Erro desconhecido';
-    showToast(`❌ ${msg}`);
+  } catch (err) {
+    console.error('[Bolão] Erro ao salvar palpite:', err);
+    showToast('❌ Erro ao salvar palpite: ' + (err?.message || 'tente novamente.'));
     btn.innerHTML = originalHTML;
     btn.style.pointerEvents = 'auto';
   }
