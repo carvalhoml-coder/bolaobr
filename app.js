@@ -152,6 +152,11 @@ async function enviarComprovante() {
     showToast('⚠️ Envie o comprovante de pagamento para continuar.');
     return;
   }
+  if (!tempNome) {
+    showToast('⚠️ Sessão expirada. Volte e informe seu nome novamente.');
+    goTo('screen-palpite');
+    return;
+  }
 
   const btn = document.getElementById('btn-enviar');
   const originalHTML = btn.innerHTML;
@@ -160,45 +165,78 @@ async function enviarComprovante() {
 
   try {
     // 1. Upload do arquivo para o Storage
-    const fileExt = uploadedFile.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const fileExt = uploadedFile.name.split('.').pop().toLowerCase();
+    const safeExt = ['jpg','jpeg','png','gif','webp','pdf'].includes(fileExt) ? fileExt : 'jpg';
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${safeExt}`;
     const filePath = `palpites/${fileName}`;
 
-    const { error: uploadError, data: uploadData } = await supabaseClient.storage
+    console.log('[Bolão] Iniciando upload para:', filePath);
+
+    const { error: uploadError } = await supabaseClient.storage
       .from('comprovantes')
-      .upload(filePath, uploadedFile);
+      .upload(filePath, uploadedFile, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: uploadedFile.type || 'application/octet-stream'
+      });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      console.error('[Bolão] Erro no upload do storage:', uploadError);
+      throw new Error(`Erro ao enviar arquivo: ${uploadError.message}`);
+    }
 
-    // Pegar URL publica do arquivo
+    console.log('[Bolão] Upload concluído. Obtendo URL pública...');
+
+    // 2. Pegar URL publica do arquivo
     const { data: publicUrlData } = supabaseClient.storage
       .from('comprovantes')
       .getPublicUrl(filePath);
 
-    // 2. Inserir no Banco de Dados
-    const { error: insertError } = await supabaseClient
+    const comprovanteUrl = publicUrlData?.publicUrl || '';
+    console.log('[Bolão] URL pública:', comprovanteUrl);
+
+    // 3. Inserir no Banco de Dados
+    console.log('[Bolão] Inserindo participante:', tempNome, tempPalpite);
+
+    const { data: insertData, error: insertError } = await supabaseClient
       .from('participants')
       .insert([
         {
           nome: tempNome,
           palpite_brasil: tempPalpite.brasil,
           palpite_adversario: tempPalpite.adversario,
-          status: 'pending', // Fica pendente até aprovação do admin
+          status: 'pending',
           comprovante_nome: uploadedFile.name,
-          comprovante_url: publicUrlData.publicUrl
+          comprovante_url: comprovanteUrl
         }
-      ]);
+      ])
+      .select();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error('[Bolão] Erro ao inserir participante:', insertError);
+      throw new Error(`Erro ao salvar palpite: ${insertError.message}`);
+    }
+
+    console.log('[Bolão] Participante inserido com sucesso:', insertData);
 
     // Limpar state
+    const nomeSalvo = tempNome;
     tempNome = '';
     uploadedFile = null;
+
+    // Resetar campos
+    document.getElementById('inp-nome').value = '';
+    scoreBrasil = 0;
+    scoreAdversario = 0;
+    document.getElementById('score-brasil').textContent = '0';
+    document.getElementById('score-haiti').textContent = '0';
+    updatePalpitePreview();
+    removeFile();
 
     btn.innerHTML = originalHTML;
     btn.style.pointerEvents = 'auto';
 
-    showToast('🎉 Palpite enviado! Aguardando aprovação.');
+    showToast(`🎉 Palpite de ${nomeSalvo} enviado! Aguardando aprovação.`);
 
     // Busca os dados atualizados
     await fetchParticipants();
@@ -206,8 +244,9 @@ async function enviarComprovante() {
     createConfetti();
 
   } catch (error) {
-    console.error('Erro ao enviar:', error);
-    showToast('❌ Ocorreu um erro ao enviar. Tente novamente.');
+    console.error('[Bolão] Erro completo:', error);
+    const msg = error?.message || 'Erro desconhecido';
+    showToast(`❌ ${msg}`);
     btn.innerHTML = originalHTML;
     btn.style.pointerEvents = 'auto';
   }
@@ -215,35 +254,37 @@ async function enviarComprovante() {
 
 // ─── FETCH DADOS (SUPABASE) ──────────────────────────────────────────────────
 async function fetchParticipants() {
-  const { data, error } = await supabaseClient
-    .from('participants')
-    .select('*')
-    .gt('created_at', CONFIG.gameCutoffDate)
-    .order('created_at', { ascending: true }); // Ordem cronológica
+  try {
+    const { data, error } = await supabaseClient
+      .from('participants')
+      .select('*')
+      .gt('created_at', CONFIG.gameCutoffDate)
+      .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error('Erro ao buscar dados:', error);
-    return;
+    if (error) {
+      console.error('[Bolão] Erro ao buscar participantes:', error);
+      return;
+    }
+
+    participantsData = data || [];
+
+    if (document.getElementById('screen-landing').classList.contains('active')) renderLanding();
+    if (document.getElementById('screen-dashboard').classList.contains('active')) renderDashboard();
+    if (document.getElementById('screen-admin').classList.contains('active')) renderAdmin();
+  } catch (err) {
+    console.error('[Bolão] Erro inesperado em fetchParticipants:', err);
   }
-
-  participantsData = data || [];
-
-  if (document.getElementById('screen-landing').classList.contains('active')) renderLanding();
-  if (document.getElementById('screen-dashboard').classList.contains('active')) renderDashboard();
-  if (document.getElementById('screen-admin').classList.contains('active')) renderAdmin();
 }
 
 // ─── REALTIME ────────────────────────────────────────────────────────────────
 function setupRealtime() {
-  // Realtime de participantes
   supabaseClient
     .channel('public:participants')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, payload => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, () => {
       fetchParticipants();
     })
     .subscribe();
 
-  // Realtime de settings
   supabaseClient
     .channel('public:settings')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, payload => {
@@ -314,7 +355,6 @@ function renderAdmin() {
   document.getElementById('stat-aprovado').textContent = approved.length;
   document.getElementById('stat-reprovado').textContent = rejected.length;
 
-  // Atualizar visualização do card de bloqueio na renderização do admin
   updateGuessesLockedState(guessesLocked);
 
   const list = document.getElementById('admin-list');
@@ -325,7 +365,6 @@ function renderAdmin() {
     return;
   }
 
-  // Pendentes primeiro, depois aprovados, depois reprovados
   const sorted = [...pending, ...approved, ...rejected];
 
   sorted.forEach(p => {
@@ -369,7 +408,6 @@ function openModal(id) {
     preview.innerHTML = '<p style="color:var(--text-muted)">Nenhum comprovante anexado.</p>';
   }
 
-  // Update button states
   const btnApprove = document.getElementById('btn-aprovar');
   const btnReject = document.getElementById('btn-reprovar');
 
@@ -397,12 +435,14 @@ function closeModal() {
 async function aprovar() {
   if (!currentModalId) return;
   try {
-    await supabaseClient.from('participants')
+    const { error } = await supabaseClient.from('participants')
       .update({ status: 'approved' })
       .eq('id', currentModalId);
+    if (error) throw error;
     showToast('✅ Comprovante aprovado!');
   } catch (e) {
-    showToast('❌ Erro ao aprovar.');
+    console.error('[Bolão] Erro ao aprovar:', e);
+    showToast('❌ Erro ao aprovar: ' + (e?.message || ''));
   }
   closeModal();
 }
@@ -410,12 +450,14 @@ async function aprovar() {
 async function reprovar() {
   if (!currentModalId) return;
   try {
-    await supabaseClient.from('participants')
+    const { error } = await supabaseClient.from('participants')
       .update({ status: 'rejected' })
       .eq('id', currentModalId);
+    if (error) throw error;
     showToast('❌ Comprovante reprovado.');
   } catch (e) {
-    showToast('❌ Erro ao reprovar.');
+    console.error('[Bolão] Erro ao reprovar:', e);
+    showToast('❌ Erro ao reprovar: ' + (e?.message || ''));
   }
   closeModal();
 }
@@ -435,7 +477,7 @@ function showToast(msg) {
   toastTimeout = setTimeout(() => {
     t.style.animation = 'slideUp 0.3s ease reverse forwards';
     setTimeout(() => t.classList.add('hidden'), 300);
-  }, 3000);
+  }, 4000);
 }
 
 function escHtml(str) {
@@ -477,21 +519,23 @@ async function fetchSettings() {
     const { data, error } = await supabaseClient
       .from('settings')
       .select('*');
-    if (error) throw error;
-    
+    if (error) {
+      console.error('[Bolão] Erro ao carregar settings:', error);
+      return;
+    }
+
     const lockSetting = (data || []).find(s => s.key === 'guesses_locked');
     if (lockSetting) {
       updateGuessesLockedState(lockSetting.value);
     }
   } catch (err) {
-    console.error('Erro ao carregar configurações:', err);
+    console.error('[Bolão] Erro inesperado em fetchSettings:', err);
   }
 }
 
 function updateGuessesLockedState(locked) {
   guessesLocked = locked;
-  
-  // Atualizar botão na landing page
+
   const btnParticipar = document.getElementById('btn-participar');
   if (btnParticipar) {
     if (guessesLocked) {
@@ -513,7 +557,6 @@ function updateGuessesLockedState(locked) {
     }
   }
 
-  // Atualizar painel do Admin
   const statusText = document.getElementById('lock-status-text');
   const lockIcon = document.getElementById('lock-icon');
   const btnToggle = document.getElementById('btn-toggle-lock');
@@ -546,14 +589,14 @@ async function toggleLockGuesses() {
       .from('settings')
       .update({ value: nextState })
       .eq('key', 'guesses_locked');
-    
+
     if (error) throw error;
     guessesLocked = nextState;
     updateGuessesLockedState(guessesLocked);
     showToast(nextState ? '🔒 Palpites bloqueados!' : '🔓 Palpites liberados!');
   } catch (e) {
-    console.error('Erro ao alterar status:', e);
-    showToast('❌ Erro ao alterar status.');
+    console.error('[Bolão] Erro ao alterar lock:', e);
+    showToast('❌ Erro ao alterar status: ' + (e?.message || ''));
   } finally {
     btnToggle.innerHTML = originalHTML;
     btnToggle.style.pointerEvents = 'auto';
@@ -585,7 +628,6 @@ document.addEventListener('DOMContentLoaded', () => {
       handleFileUpload(e);
     });
 
-    // Keyboard accessibility for file upload
     zone.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
