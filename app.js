@@ -142,6 +142,50 @@ function removeFile() {
   document.getElementById('upload-label').classList.remove('hidden');
 }
 
+// ─── COMPRESSÃO DE IMAGEM ────────────────────────────────────────────────────
+function comprimirImagem(file, maxWidth, maxHeight, quality) {
+  return new Promise((resolve) => {
+    // PDFs não comprimem — retorna o arquivo original
+    if (file.type === 'application/pdf') { resolve(file); return; }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+
+        // Redimensionar mantendo proporção
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width  = Math.round(width  * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width  = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { resolve(file); return; } // fallback
+            const compressed = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+            console.log(`[Bolão] Comprimido: ${(file.size/1024).toFixed(0)}KB → ${(compressed.size/1024).toFixed(0)}KB`);
+            resolve(compressed);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => resolve(file); // fallback
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file); // fallback
+    reader.readAsDataURL(file);
+  });
+}
+
 // ─── ENVIAR COMPROVANTE (SUPABASE) ───────────────────────────────────────────
 async function enviarComprovante() {
   if (guessesLocked) {
@@ -170,19 +214,21 @@ async function enviarComprovante() {
   // ── 1. Tenta upload para o Storage (NÃO-BLOQUEANTE)
   if (uploadedFile) {
     try {
-      const fileExt = (uploadedFile.name.split('.').pop() || 'jpg').toLowerCase();
-      const safeExt = ['jpg','jpeg','png','gif','webp','pdf'].includes(fileExt) ? fileExt : 'jpg';
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${safeExt}`;
+      // Comprimir imagem antes do upload (resolve erro de memória)
+      const fileParaUpload = await comprimirImagem(uploadedFile, 1200, 1200, 0.75);
+
+      const fileExt = fileParaUpload.type === 'application/pdf' ? 'pdf' : 'jpg';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
       const filePath = `palpites/${fileName}`;
 
-      console.log('[Bolão] Tentando upload:', filePath);
+      console.log('[Bolão] Tentando upload:', filePath, `(${(fileParaUpload.size/1024).toFixed(0)}KB)`);
 
       const { error: uploadError } = await supabaseClient.storage
         .from('comprovantes')
-        .upload(filePath, uploadedFile, {
+        .upload(filePath, fileParaUpload, {
           cacheControl: '3600',
           upsert: false,
-          contentType: uploadedFile.type || 'application/octet-stream'
+          contentType: fileParaUpload.type || 'image/jpeg'
         });
 
       if (uploadError) {
