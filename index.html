@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bolão Brasil × Marrocos · Copa 2026</title>
-  <meta name="description" content="Participe do Bolão Brasil × Marrocos! Faça seu palpite para a estreia do Brasil na Copa do Mundo 2026 e concorra ao prêmio acumulado." />
+  <title>Bolão Brasil × Haiti · Copa 2026</title>
+  <meta name="description" content="Participe do Bolão Brasil × Haiti! Faça seu palpite para o jogo do Brasil e concorra ao prêmio acumulado." />
   <meta name="theme-color" content="#0a0a0f" />
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Bolão Brasil × Marrocos · Copa 2026" />
+  <meta property="og:title" content="Bolão Brasil × Haiti · Copa 2026" />
   <meta property="og:description" content="Faça seu palpite e concorra ao prêmio do bolão!" />
   <meta property="og:type" content="website" />
 
@@ -36,13 +36,13 @@
       <!-- Badge do evento -->
       <div class="event-badge animate-in" style="--delay:.05s">
         <span class="badge-dot"></span>
-        Copa do Mundo 2026 · Estreia do Brasil
+        Brasil × Haiti · Sexta-feira, Dia 19
       </div>
 
       <!-- Título principal -->
       <h1 class="landing-title animate-in" style="--delay:.1s">
         Bolão
-        <span class="title-gradient">Brasil × Marrocos</span>
+        <span class="title-gradient">Brasil × Haiti</span>
       </h1>
 
       <!-- Match card -->
@@ -56,8 +56,8 @@
           <span class="vs-sub">palpite</span>
         </div>
         <div class="match-team">
-          <div class="team-flag flag-marrocos">🇲🇦</div>
-          <span class="team-label">Marrocos</span>
+          <div class="team-flag flag-haiti">🇭🇹</div>
+          <span class="team-label">Haiti</span>
         </div>
       </div>
 
@@ -119,21 +119,21 @@
 
             <div class="score-divider">×</div>
 
-            <!-- Marrocos -->
+            <!-- Haiti -->
             <div class="score-team-block">
-              <span class="score-flag">🇲🇦</span>
-              <span class="score-team-name">Marrocos</span>
+              <span class="score-flag">🇭🇹</span>
+              <span class="score-team-name">Haiti</span>
               <div class="stepper">
-                <button class="stepper-btn" id="mar-minus" onclick="changeScore('marrocos',-1)" aria-label="Diminuir placar Marrocos">−</button>
-                <span class="stepper-val" id="score-marrocos">0</span>
-                <button class="stepper-btn" id="mar-plus" onclick="changeScore('marrocos',1)" aria-label="Aumentar placar Marrocos">+</button>
+                <button class="stepper-btn" id="hai-minus" onclick="changeScore('haiti',-1)" aria-label="Diminuir placar Haiti">−</button>
+                <span class="stepper-val" id="score-haiti">0</span>
+                <button class="stepper-btn" id="hai-plus" onclick="changeScore('haiti',1)" aria-label="Aumentar placar Haiti">+</button>
               </div>
             </div>
           </div>
 
           <!-- Resumo do palpite -->
           <div class="palpite-preview" id="palpite-preview">
-            Palpite: <strong>🇧🇷 Brasil 0 × 0 🇲🇦 Marrocos</strong>
+            Palpite: <strong>🇧🇷 Brasil 0 × 0 🇭🇹 Haiti</strong>
           </div>
         </div>
 
@@ -261,7 +261,7 @@
       <header class="dashboard-header">
         <div>
           <p class="dash-header-supra">Copa do Mundo 2026</p>
-          <h1 class="dash-header-title">Brasil × Marrocos</h1>
+          <h1 class="dash-header-title">Brasil × Haiti</h1>
         </div>
         <button class="icon-btn" onclick="goTo('screen-landing')" title="Início" id="dash-home-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -335,6 +335,20 @@
           <div class="stat-card stat-rejected">
             <span class="stat-num" id="stat-reprovado">0</span>
             <span class="stat-label">Reprovados</span>
+          </div>
+        </div>
+
+        <!-- Painel de Controle (Bloqueio) -->
+        <div class="control-card animate-in" style="--delay:.1s">
+          <div class="control-header">
+            <div class="control-title-wrap">
+              <span class="control-icon" id="lock-icon">🔓</span>
+              <span class="control-label">Status dos Palpites:</span>
+              <strong id="lock-status-text" class="status-open">Abertos</strong>
+            </div>
+            <button type="button" class="btn-toggle-lock" id="btn-toggle-lock" onclick="toggleLockGuesses()">
+              Bloquear Palpites
+            </button>
           </div>
         </div>
 

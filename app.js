@@ -1,5 +1,5 @@
 /* ==========================================================================
-   BOLÃO BRASIL × MARROCOS - Supabase Integration
+   BOLÃO BRASIL × HAITI - Supabase Integration
    ========================================================================== */
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
@@ -11,22 +11,28 @@ const CONFIG = {
   prizePerPerson: 5,
   pixKey: '91992414247',
   pixName: 'Edwiges Roberta',
-  pixType: 'Celular'
+  pixType: 'Celular',
+  gameCutoffDate: '2026-06-18T17:00:00Z' // Filtra palpites anteriores a esta data
 };
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let scoreBrasil = 0;
-let scoreMarrocos = 0;
+let scoreAdversario = 0;
 let uploadedFile = null;
 let currentModalId = null;
 let participantsData = []; // Local cache da tabela
+let guessesLocked = false; // Estado de bloqueio dos palpites
 
 // Para salvar temporariamente durante o fluxo
 let tempNome = '';
-let tempPalpite = { brasil: 0, marrocos: 0 };
+let tempPalpite = { brasil: 0, adversario: 0 };
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
 function goTo(screenId) {
+  if (screenId === 'screen-palpite' && guessesLocked) {
+    showToast('🔒 Os palpites para este jogo já estão encerrados.');
+    return;
+  }
   document.querySelectorAll('.screen').forEach(s => {
     s.classList.remove('active');
   });
@@ -56,19 +62,23 @@ function changeScore(team, delta) {
     scoreBrasil = Math.max(0, scoreBrasil + delta);
     document.getElementById('score-brasil').textContent = scoreBrasil;
   } else {
-    scoreMarrocos = Math.max(0, scoreMarrocos + delta);
-    document.getElementById('score-marrocos').textContent = scoreMarrocos;
+    scoreAdversario = Math.max(0, scoreAdversario + delta);
+    document.getElementById('score-haiti').textContent = scoreAdversario;
   }
   updatePalpitePreview();
 }
 
 function updatePalpitePreview() {
   const preview = document.getElementById('palpite-preview');
-  preview.innerHTML = `Palpite: <strong>🇧🇷 Brasil ${scoreBrasil} × ${scoreMarrocos} 🇲🇦 Marrocos</strong>`;
+  preview.innerHTML = `Palpite: <strong>🇧🇷 Brasil ${scoreBrasil} × ${scoreAdversario} 🇭🇹 Haiti</strong>`;
 }
 
 // ─── SUBMIT PALPITE ──────────────────────────────────────────────────────────
 function submitPalpite() {
+  if (guessesLocked) {
+    showToast('🔒 Os palpites já estão encerrados para este jogo.');
+    return;
+  }
   const inp = document.getElementById('inp-nome');
   const nome = inp.value.trim();
 
@@ -79,7 +89,7 @@ function submitPalpite() {
   }
 
   tempNome = nome;
-  tempPalpite = { brasil: scoreBrasil, marrocos: scoreMarrocos };
+  tempPalpite = { brasil: scoreBrasil, adversario: scoreAdversario };
 
   goTo('screen-pix');
 }
@@ -134,6 +144,10 @@ function removeFile() {
 
 // ─── ENVIAR COMPROVANTE (SUPABASE) ───────────────────────────────────────────
 async function enviarComprovante() {
+  if (guessesLocked) {
+    showToast('🔒 Os palpites foram encerrados para este jogo.');
+    return;
+  }
   if (!uploadedFile) {
     showToast('⚠️ Envie o comprovante de pagamento para continuar.');
     return;
@@ -168,7 +182,7 @@ async function enviarComprovante() {
         {
           nome: tempNome,
           palpite_brasil: tempPalpite.brasil,
-          palpite_marrocos: tempPalpite.marrocos,
+          palpite_adversario: tempPalpite.adversario,
           status: 'pending', // Fica pendente até aprovação do admin
           comprovante_nome: uploadedFile.name,
           comprovante_url: publicUrlData.publicUrl
@@ -204,6 +218,7 @@ async function fetchParticipants() {
   const { data, error } = await supabaseClient
     .from('participants')
     .select('*')
+    .gt('created_at', CONFIG.gameCutoffDate)
     .order('created_at', { ascending: true }); // Ordem cronológica
 
   if (error) {
@@ -220,11 +235,21 @@ async function fetchParticipants() {
 
 // ─── REALTIME ────────────────────────────────────────────────────────────────
 function setupRealtime() {
+  // Realtime de participantes
   supabaseClient
     .channel('public:participants')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, payload => {
-      // Quando algo mudar no banco, busca os dados de novo e re-renderiza
       fetchParticipants();
+    })
+    .subscribe();
+
+  // Realtime de settings
+  supabaseClient
+    .channel('public:settings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, payload => {
+      if (payload.new && payload.new.key === 'guesses_locked') {
+        updateGuessesLockedState(payload.new.value);
+      }
     })
     .subscribe();
 }
@@ -271,7 +296,7 @@ function renderDashboard() {
             <span class="part-name">${escHtml(p.nome)}</span>
             ${badges.join('')}
           </div>
-          <div class="part-palpite">🇧🇷 ${p.palpite_brasil} × ${p.palpite_marrocos} 🇲🇦</div>
+          <div class="part-palpite">🇧🇷 ${p.palpite_brasil} × ${p.palpite_adversario} 🇭🇹</div>
         </div>
       </li>
     `;
@@ -288,6 +313,9 @@ function renderAdmin() {
   document.getElementById('stat-pendente').textContent = pending.length;
   document.getElementById('stat-aprovado').textContent = approved.length;
   document.getElementById('stat-reprovado').textContent = rejected.length;
+
+  // Atualizar visualização do card de bloqueio na renderização do admin
+  updateGuessesLockedState(guessesLocked);
 
   const list = document.getElementById('admin-list');
   list.innerHTML = '';
@@ -311,7 +339,7 @@ function renderAdmin() {
           <div class="admin-item-name">${escHtml(p.nome)}</div>
           <div class="admin-item-sub status-${p.status}">
             <div class="status-dot"></div>
-            ${statusName} · 🇧🇷 ${p.palpite_brasil} × ${p.palpite_marrocos} 🇲🇦
+            ${statusName} · 🇧🇷 ${p.palpite_brasil} × ${p.palpite_adversario} 🇭🇹
           </div>
         </div>
         <button class="btn-view" onclick="openModal('${p.id}')">Ver doc</button>
@@ -327,7 +355,7 @@ function openModal(id) {
   currentModalId = id;
 
   document.getElementById('modal-nome').textContent = p.nome;
-  document.getElementById('modal-palpite').textContent = `Palpite: 🇧🇷 ${p.palpite_brasil} × ${p.palpite_marrocos} 🇲🇦`;
+  document.getElementById('modal-palpite').textContent = `Palpite: 🇧🇷 ${p.palpite_brasil} × ${p.palpite_adversario} 🇭🇹`;
 
   const preview = document.getElementById('modal-file-preview');
   if (p.comprovante_url) {
@@ -443,10 +471,100 @@ function createConfetti() {
   }
 }
 
+// ─── SETTINGS FETCH & WRITE ──────────────────────────────────────────────────
+async function fetchSettings() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('settings')
+      .select('*');
+    if (error) throw error;
+    
+    const lockSetting = (data || []).find(s => s.key === 'guesses_locked');
+    if (lockSetting) {
+      updateGuessesLockedState(lockSetting.value);
+    }
+  } catch (err) {
+    console.error('Erro ao carregar configurações:', err);
+  }
+}
+
+function updateGuessesLockedState(locked) {
+  guessesLocked = locked;
+  
+  // Atualizar botão na landing page
+  const btnParticipar = document.getElementById('btn-participar');
+  if (btnParticipar) {
+    if (guessesLocked) {
+      btnParticipar.disabled = true;
+      btnParticipar.style.opacity = '0.6';
+      btnParticipar.style.cursor = 'not-allowed';
+      btnParticipar.innerHTML = `
+        <span>Palpites encerrados</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      `;
+    } else {
+      btnParticipar.disabled = false;
+      btnParticipar.style.opacity = '';
+      btnParticipar.style.cursor = '';
+      btnParticipar.innerHTML = `
+        <span>Quero participar</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      `;
+    }
+  }
+
+  // Atualizar painel do Admin
+  const statusText = document.getElementById('lock-status-text');
+  const lockIcon = document.getElementById('lock-icon');
+  const btnToggle = document.getElementById('btn-toggle-lock');
+  if (statusText && btnToggle && lockIcon) {
+    if (guessesLocked) {
+      statusText.textContent = 'Bloqueados';
+      statusText.className = 'status-locked';
+      lockIcon.textContent = '🔒';
+      btnToggle.textContent = 'Desbloquear Palpites';
+      btnToggle.className = 'btn-toggle-lock btn-unlock';
+    } else {
+      statusText.textContent = 'Abertos';
+      statusText.className = 'status-open';
+      lockIcon.textContent = '🔓';
+      btnToggle.textContent = 'Bloquear Palpites';
+      btnToggle.className = 'btn-toggle-lock';
+    }
+  }
+}
+
+async function toggleLockGuesses() {
+  const nextState = !guessesLocked;
+  const btnToggle = document.getElementById('btn-toggle-lock');
+  const originalHTML = btnToggle.innerHTML;
+  btnToggle.innerHTML = '⏳ Processando...';
+  btnToggle.style.pointerEvents = 'none';
+
+  try {
+    const { error } = await supabaseClient
+      .from('settings')
+      .update({ value: nextState })
+      .eq('key', 'guesses_locked');
+    
+    if (error) throw error;
+    guessesLocked = nextState;
+    updateGuessesLockedState(guessesLocked);
+    showToast(nextState ? '🔒 Palpites bloqueados!' : '🔓 Palpites liberados!');
+  } catch (e) {
+    console.error('Erro ao alterar status:', e);
+    showToast('❌ Erro ao alterar status.');
+  } finally {
+    btnToggle.innerHTML = originalHTML;
+    btnToggle.style.pointerEvents = 'auto';
+  }
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Busca inicial dos dados
+  // Busca inicial dos dados e configurações
   fetchParticipants();
+  fetchSettings();
 
   // Ativa o Realtime
   setupRealtime();

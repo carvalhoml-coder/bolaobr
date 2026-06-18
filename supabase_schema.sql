@@ -3,7 +3,7 @@ CREATE TABLE public.participants (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   nome text NOT NULL,
   palpite_brasil integer NOT NULL,
-  palpite_marrocos integer NOT NULL,
+  palpite_adversario integer NOT NULL,
   status text NOT NULL DEFAULT 'approved',
   comprovante_nome text,
   comprovante_url text,
@@ -42,3 +42,22 @@ with check ( bucket_id = 'comprovantes' );
 create policy "Qualquer um pode ler comprovantes"
 on storage.objects for select
 using ( bucket_id = 'comprovantes' );
+
+-- 5. Criar a tabela de Configurações (Settings) para bloqueio de palpites
+CREATE TABLE public.settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permitir leitura pública" ON public.settings FOR SELECT USING (true);
+CREATE POLICY "Permitir atualização pública" ON public.settings FOR UPDATE USING (true);
+CREATE POLICY "Permitir inserção pública" ON public.settings FOR INSERT WITH CHECK (true);
+
+-- Habilitar Realtime para settings
+alter publication supabase_realtime add table public.settings;
+
+-- Inserir configuração inicial
+INSERT INTO public.settings (key, value) VALUES ('guesses_locked', 'false'::jsonb);
